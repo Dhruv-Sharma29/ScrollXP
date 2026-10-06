@@ -1,0 +1,52 @@
+[
+  {
+    "path": "screenshots/01-home-dusk.png",
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "RGB",
+    "source": "native emulator capture; no fabricated progress",
+    "sha256": "afb603ba50aff41403fb97edb3c9a21e3d120e7ec0af204c64eff4227d7b8dfb"
+  },
+  {
+    "path": "screenshots/02-island-dusk.png",
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "RGB",
+    "source": "native emulator capture; no fabricated progress",
+    "sha256": "21faeccc173f5b12e717b5f4710832290c6f0f4775943bb4470b676bbff308b9"
+  },
+  {
+    "path": "screenshots/03-seaside-preview.png",
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "RGB",
+    "source": "native emulator capture; no fabricated progress",
+    "sha256": "aa1cd09c746118514317a2464177737c93c80c662bffd9300062e23a65260c2f"
+  },
+  {
+    "path": "screenshots/04-balance-goals.png",
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "RGB",
+    "source": "native emulator capture; no fabricated progress",
+    "sha256": "ab1d8e1cc210c3bd069cbaa875cb79687867ad913fc30d4b8e76c055922a58d4"
+  },
+  {
+    "path": "screenshots/05-first-chapter.png",
+    "size": [
+      1080,
+      1920
+    ],
+    "mode": "RGB",
+    "source": "native emulator capture; no fabricated progress",
+    "sha256": "133b00069e0836f06658c21e3cc50aff2d3d83e12460b7d03eebe474d59b26e9"
+  }
+]
