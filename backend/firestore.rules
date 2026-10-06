@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function freshSignIn() {
+      return request.auth.token.auth_time is int
+        && timestamp.value(request.auth.token.auth_time * 1000) <= request.time
+        && request.time - timestamp.value(request.auth.token.auth_time * 1000) <= duration.value(5, 'm');
+    }
+    function alive() {
+      return verified() && !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+    }
+    function friendReady() {
+      return alive() && !existsAfter(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+    }
+    function codeValid(code) { return code.matches('^[A-F0-9]{20}$'); }
+    function indexedAfter(code) {
+      return existsAfter(/databases/$(database)/documents/friendLinks/$(request.auth.uid))
+        && code in getAfter(/databases/$(database)/documents/friendLinks/$(request.auth.uid)).data.circleIds;
+    }
+    function linkedEntry(data, i) {
+      return data.circleIds.size() <= i || (codeValid(data.circleIds[i])
+        && existsAfter(/databases/$(database)/documents/friendCircles/$(data.circleIds[i]))
+        && request.auth.uid in getAfter(/databases/$(database)/documents/friendCircles/$(data.circleIds[i])).data.memberIds
+        && existsAfter(/databases/$(database)/documents/friendCircles/$(data.circleIds[i])/members/$(request.auth.uid)));
+    }
+    function releasedEntry(before, after, i) {
+      return before.circleIds.size() <= i || before.circleIds[i] in after.circleIds
+        || (!existsAfter(/databases/$(database)/documents/friendCircles/$(before.circleIds[i])/members/$(request.auth.uid))
+          && (!existsAfter(/databases/$(database)/documents/friendCircles/$(before.circleIds[i]))
+            || !(request.auth.uid in getAfter(/databases/$(database)/documents/friendCircles/$(before.circleIds[i])).data.memberIds)));
+    }
+    function linkShape(data) {
+      return data.keys().hasOnly(['circleIds']) && data.circleIds is list
+        && data.circleIds.size() <= 3 && data.circleIds.toSet().size() == data.circleIds.size()
+        && linkedEntry(data, 0) && linkedEntry(data, 1) && linkedEntry(data, 2);
+    }
+    match /friendLinks/{uid} {
+      allow get: if owner(uid);
+      allow create: if owner(uid) && friendReady() && linkShape(request.resource.data);
+      // An existing member can always remove their own data, even after losing email verification.
+      allow update: if owner(uid)
+        && (friendReady() || request.resource.data.circleIds.toSet().difference(resource.data.circleIds.toSet()).size() == 0)
+        && linkShape(request.resource.data)
+        && releasedEntry(resource.data, request.resource.data, 0)
+        && releasedEntry(resource.data, request.resource.data, 1)
+        && releasedEntry(resource.data, request.resource.data, 2);
+      allow delete: if owner(uid) && (!exists(/databases/$(database)/documents/friendLinks/$(uid)) || resource.data.circleIds.size() == 0);
+    }
+    match /friendCircles/{code} {
+      // Invite codes are bearer invitations: verified code holders can get metadata, never enumerate circles.
+      allow get: if codeValid(code) && (alive() || (request.auth != null && request.auth.uid in resource.data.memberIds));
+      allow create: if friendReady() && codeValid(code)
+        && request.resource.data.keys().hasOnly(['title','createdAt','endsAt','memberIds'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 32
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.endsAt is timestamp
+        && request.resource.data.endsAt >= request.time + duration.value(10075, 'm')
+        && request.resource.data.endsAt <= request.time + duration.value(10085, 'm')
+        && request.resource.data.memberIds == [request.auth.uid]
+        && indexedAfter(code)
+        && existsAfter(/databases/$(database)/documents/friendCircles/$(code)/members/$(request.auth.uid));
+      allow update: if request.auth != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() > 0 && request.resource.data.memberIds.size() <= 6
+        && request.resource.data.memberIds.toSet().size() == request.resource.data.memberIds.size()
+        && ((friendReady() && request.time < resource.data.endsAt && !(request.auth.uid in resource.data.memberIds)
+          && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().union([request.auth.uid].toSet())
+          && indexedAfter(code) && existsAfter(/databases/$(database)/documents/friendCircles/$(code)/members/$(request.auth.uid)))
+        || (request.auth.uid in resource.data.memberIds
+          && request.resource.data.memberIds.toSet() == resource.data.memberIds.toSet().difference([request.auth.uid].toSet())
+          && !indexedAfter(code) && !existsAfter(/databases/$(database)/documents/friendCircles/$(code)/members/$(request.auth.uid))));
+      allow delete: if request.auth != null && resource.data.memberIds == [request.auth.uid]
+        && !indexedAfter(code) && !existsAfter(/databases/$(database)/documents/friendCircles/$(code)/members/$(request.auth.uid));
+      match /members/{uid} {
+        function inCircle() {
+          return request.auth != null && request.auth.uid in get(/databases/$(database)/documents/friendCircles/$(code)).data.memberIds;
+        }
+        function memberAfter() {
+          return existsAfter(/databases/$(database)/documents/friendCircles/$(code))
+            && uid in getAfter(/databases/$(database)/documents/friendCircles/$(code)).data.memberIds && indexedAfter(code);
+        }
+        allow get, list: if inCircle() && !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+        allow create: if owner(uid) && friendReady() && memberAfter()
+          && request.resource.data.keys().hasOnly(['name','goalDays','joinedAt','updatedAt'])
+          && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 32
+          && request.resource.data.goalDays == 0
+          && request.resource.data.joinedAt == request.time && request.resource.data.updatedAt == request.time;
+        allow update: if owner(uid) && friendReady() && memberAfter()
+          && request.time <= get(/databases/$(database)/documents/friendCircles/$(code)).data.endsAt + duration.value(2, 'd')
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['goalDays','updatedAt'])
+          && request.resource.data.goalDays is int && request.resource.data.goalDays >= resource.data.goalDays && request.resource.data.goalDays <= 7
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if owner(uid) && !indexedAfter(code)
+          && (!existsAfter(/databases/$(database)/documents/friendCircles/$(code)) || !(uid in getAfter(/databases/$(database)/documents/friendCircles/$(code)).data.memberIds));
+      }
+    }
+    match /users/{uid}/backups/latest {
+      allow read: if owner(uid) && verified()
+        && !exists(/databases/$(database)/documents/accountDeletions/$(uid));
+      // An unverified account can still remove its own data during deletion.
+      allow delete: if owner(uid);
+      allow create, update: if owner(uid) && verified()
+        && !existsAfter(/databases/$(database)/documents/accountDeletions/$(uid))
+        && request.resource.data.keys().hasOnly(['version', 'payload', 'name', 'xp', 'updatedAt'])
+        && request.resource.data.version == 1
+        && request.resource.data.payload is string && request.resource.data.payload.size() <= 900000
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 28
+        && request.resource.data.xp is int && request.resource.data.xp >= 0 && request.resource.data.xp <= 100000000
+        && request.resource.data.updatedAt == request.time;
+    }
+    match /accountDeletions/{uid} {
+      allow read: if owner(uid);
+      // Create once, only after reauthentication and atomic removal of the backup.
+      allow create: if owner(uid) && freshSignIn()
+        && request.resource.data.keys().hasOnly(['deletedAt'])
+        && request.resource.data.deletedAt == request.time
+        && !existsAfter(/databases/$(database)/documents/users/$(uid)/backups/latest)
+        && !existsAfter(/databases/$(database)/documents/friendLinks/$(uid));
+      allow update, delete: if false;
+    }
+    // Purchases never establish a client-writable cloud entitlement.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
