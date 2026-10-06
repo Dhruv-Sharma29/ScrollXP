@@ -1,0 +1,42 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Local verification artifacts
+/work/
+/outputs/
+.codebase-memory/
+
+# Private signing material (never commit or share)
+/.private/
+*.jks
+*.keystore
+*.p12
+signing.properties
+
+# Generated release binaries
+/output/
+
+# Environment-specific online configuration and server dependencies
+app/google-services.json
+.env
+.env.*
+node_modules/
+firebase-debug.log
+firestore-debug.log
+
+# iOS workspace (excluded from commit)
+/ios/
+
