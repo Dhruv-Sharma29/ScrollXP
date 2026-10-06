@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Compose loads this bitmap by resource ID; retain it in optimized releases. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/scrollxp_logo" />
