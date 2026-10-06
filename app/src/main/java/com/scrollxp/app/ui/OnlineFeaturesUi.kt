@@ -101,7 +101,7 @@ internal fun OnlineFeatures(state: ScrollState, refreshLocal: () -> Unit) {
         }
     }
     FeaturePanel("Cloud island backup") {
-        Text("Save your island, XP ledger, earned reward dates, and chest contents. App selections, daily usage totals, and reminder settings stay on the phone.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
+        Text("Save or restore the same island on Android and iPhone, including XP, reward dates, and chest contents. App selections, daily usage totals, and reminder settings stay on the phone.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
         Text("Backups are manual. Each account keeps one latest backup; saving replaces it. Restoring replaces this device's game and clears local usage history.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
         online.backupTime?.let { Text("${online.backupName.orEmpty()} · ${online.backupXp ?: 0} XP\nSaved ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(it))}",fontSize = 13.sp) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

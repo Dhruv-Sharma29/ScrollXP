@@ -95,6 +95,7 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (!existing.isEmailVerified) return@perform "Verify your email before using cloud backups."
         val backup = cloud.latest(uid); same(uid)
+        cloud.decode(backup)
         mutable.update { it.copy(backupTime = backup.getTimestamp("updatedAt")?.toDate()?.time,
             backupXp = backup.getLong("xp")?.toInt(),backupName = backup.getString("name")) }
         "Account and cloud backup refreshed."
@@ -109,7 +110,7 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
     fun restore() = perform {
         val uid = user().uid
         val doc = requireNotNull(cloud).latest(uid); same(uid)
-        val backup = IslandBackup.decode(requireNotNull(doc.getString("payload")) { "No cloud backup exists for this account." })
+        val backup = requireNotNull(cloud.decode(doc)) { "No cloud backup exists for this account." }
         repository.restore(backup) { auth?.currentUser?.uid == uid }
         IslandWidget.refresh(getApplication())
         "Island restored. Local usage history was cleared; device app selection was kept."

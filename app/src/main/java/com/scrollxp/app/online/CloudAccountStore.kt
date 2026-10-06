@@ -11,8 +11,18 @@ class CloudAccountStore(private val db: FirebaseFirestore) {
     suspend fun deletionStarted(uid: String) = guard(uid).get(Source.SERVER).await().exists()
     suspend fun latest(uid: String) = backup(uid).get(Source.SERVER).await()
     suspend fun save(uid: String, snapshot: IslandBackup) {
-        backup(uid).set(mapOf("version" to 1,"payload" to snapshot.encode(),"name" to snapshot.profile.islandName,
+        backup(uid).set(mapOf("version" to IslandBackup.VERSION,"payload" to snapshot.encode(),"name" to snapshot.profile.islandName,
             "xp" to snapshot.xp,"updatedAt" to FieldValue.serverTimestamp())).await()
+    }
+    fun decode(document: DocumentSnapshot): IslandBackup? {
+        if (!document.exists()) return null
+        require(document.get("version") == IslandBackup.VERSION.toLong()) { "Unsupported cloud backup version." }
+        val backup = IslandBackup.decode(requireNotNull(document.getString("payload")) { "The cloud backup is incomplete." })
+        require(document.getString("name") == backup.profile.islandName && document.get("xp") == backup.xp.toLong()) {
+            "The cloud backup metadata does not match its island. Local progress has been kept."
+        }
+        require(document.getTimestamp("updatedAt") != null) { "The cloud backup is missing its save time." }
+        return backup
     }
     suspend fun removeBackup(uid: String) { backup(uid).delete().await() }
     suspend fun beginDeletion(uid: String) {

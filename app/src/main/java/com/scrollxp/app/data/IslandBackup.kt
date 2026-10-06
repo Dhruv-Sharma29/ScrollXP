@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 import java.time.ZoneId
 
-/** Game records only: never selected apps, raw events, daily minutes, or reminder settings. */
+/** Shared Android/iOS v1 wire format. Game records only; device tracking and reminders stay local. */
 data class IslandBackup(val profile: Profile, val rewards: List<Reward>, val chests: List<Chest>) {
     val xp: Int get() = rewards.sumOf { it.xp }
     fun validate() {
@@ -31,7 +31,7 @@ data class IslandBackup(val profile: Profile, val rewards: List<Reward>, val che
         require(chests.size <= 2_000 && chests.map { it.key }.distinct().size == chests.size)
         require(chests.filter { it.itemId != Treasures.KEEPSAKE }.map { it.itemId }.distinct().size == chests.count { it.itemId != Treasures.KEEPSAKE })
         chests.forEach {
-            require(it.key.length <= 80 && it.source.length <= 80 && it.earnedAt >= 0 && (it.openedAt == null || it.openedAt >= 0))
+            require(it.key.length <= 80 && it.source.length <= 80 && it.earnedAt in 0..MAX_TIMESTAMP && (it.openedAt == null || it.openedAt in 0..MAX_TIMESTAMP))
             require(it.economyVersion == Treasures.ECONOMY_VERSION)
             require(it.rarity == (Treasures.find(it.itemId)?.rarity?.label ?: "Keepsake"))
             require(it.itemId == Treasures.KEEPSAKE || Treasures.find(it.itemId) != null)
@@ -42,7 +42,7 @@ data class IslandBackup(val profile: Profile, val rewards: List<Reward>, val che
     fun encode(): String {
         validate()
         val p = profile
-        val value = JSONObject().put("version", 1).put("profile", JSONObject()
+        val value = JSONObject().put("version", VERSION).put("profile", JSONObject()
             .put("name", p.islandName).put("budget", p.budgetMinutes).put("roof", p.roof)
             .put("personality", p.personality).put("hidden", p.hiddenItems).put("zone", p.zone)
             .put("appearance", p.appearance).put("reducedMotion", p.reducedMotion).put("haptics", p.haptics)
@@ -55,28 +55,42 @@ data class IslandBackup(val profile: Profile, val rewards: List<Reward>, val che
         return value
     }
     companion object {
+        const val VERSION = 1
         const val MAX_BYTES = 900_000
+        const val MAX_TIMESTAMP = 253_402_300_799_999L
+        private fun integer(json: JSONObject, key: String): Long {
+            val value = json.get(key)
+            require(value is Int || value is Long) { "Invalid backup number: $key" }
+            return (value as Number).toLong()
+        }
+        private fun int(json: JSONObject, key: String): Int = integer(json, key).also {
+            require(it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "Invalid backup number: $key" }
+        }.toInt()
+        private fun text(json: JSONObject, key: String): String = (json.get(key) as? String)
+            ?: error("Invalid backup text: $key")
+        private fun flag(json: JSONObject, key: String): Boolean = (json.get(key) as? Boolean)
+            ?: error("Invalid backup flag: $key")
         fun decode(value: String): IslandBackup {
             require(value.toByteArray(Charsets.UTF_8).size <= MAX_BYTES)
-            val json = JSONObject(value); require(json.getInt("version") == 1)
+            val json = JSONObject(value); require(int(json, "version") == VERSION) { "Unsupported island backup version." }
             val p = json.getJSONObject("profile")
             val rewards = json.getJSONArray("rewards")
             val chests = json.getJSONArray("chests")
             require(rewards.length() <= 18_000 && chests.length() <= 2_000)
-            return IslandBackup(Profile(islandName = p.getString("name"), budgetMinutes = p.getInt("budget"), roof = p.getInt("roof"),
-                personality = p.getString("personality"), hiddenItems = p.getString("hidden"), zone = p.getString("zone"),
-                appearance = p.getString("appearance"), reducedMotion = p.getBoolean("reducedMotion"), haptics = p.getBoolean("haptics"),
-                region = p.getString("region"), guideDismissed = p.getBoolean("guideDismissed"), hasPlacedTreasure = p.getBoolean("hasPlacedTreasure")),
-                List(rewards.length()) { rewards.getJSONObject(it).let { r -> Reward(r.getString("key"), r.getString("date"), r.getString("kind"), r.getInt("xp")) } },
-                List(chests.length()) { chests.getJSONObject(it).let { c -> Chest(c.getString("key"), c.getString("source"), c.getLong("earnedAt"),
-                    c.getString("itemId"), c.getString("rarity"), if (c.isNull("openedAt")) null else c.getLong("openedAt"), c.getInt("economyVersion")) } }).also { it.validate() }
+            return IslandBackup(Profile(islandName = text(p,"name"), budgetMinutes = int(p,"budget"), roof = int(p,"roof"),
+                personality = text(p,"personality"), hiddenItems = text(p,"hidden"), zone = text(p,"zone"),
+                appearance = text(p,"appearance"), reducedMotion = flag(p,"reducedMotion"), haptics = flag(p,"haptics"),
+                region = text(p,"region"), guideDismissed = flag(p,"guideDismissed"), hasPlacedTreasure = flag(p,"hasPlacedTreasure")),
+                List(rewards.length()) { rewards.getJSONObject(it).let { r -> Reward(text(r,"key"), text(r,"date"), text(r,"kind"), int(r,"xp")) } },
+                List(chests.length()) { chests.getJSONObject(it).let { c -> Chest(text(c,"key"), text(c,"source"), integer(c,"earnedAt"),
+                    text(c,"itemId"), text(c,"rarity"), if (c.isNull("openedAt")) null else integer(c,"openedAt"), int(c,"economyVersion")) } }).also { it.validate() }
         }
     }
 }
 
 class IslandBackupStore(private val database: ScrollDatabase) {
     suspend fun snapshot(): IslandBackup = database.withTransaction {
-        IslandBackup(requireNotNull(database.dao().profile()), database.dao().rewards(), database.dao().chests())
+        IslandBackup(requireNotNull(database.dao().profile()), database.dao().rewards(), database.dao().chests()).also { it.validate() }
     }
     suspend fun restore(backup: IslandBackup, stillSameAccount: () -> Boolean) = database.withTransaction {
         backup.validate(); check(stillSameAccount()) { "Account changed. Please try again." }
