@@ -15,7 +15,7 @@ class ReminderClockReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_TIME_CHANGED && intent.action != Intent.ACTION_TIMEZONE_CHANGED) return
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try { ReminderScheduler.replan(context.applicationContext) }
+            try { ReminderScheduler.replan(context.applicationContext); NightlyScheduler.enqueue(context.applicationContext, androidx.work.ExistingWorkPolicy.REPLACE) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { /* A future app refresh retries scheduling if Android is temporarily unavailable. */ }
             finally { pending.finish() }
