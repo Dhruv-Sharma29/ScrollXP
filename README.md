@@ -40,7 +40,7 @@ Still pending: Play product/key setup and real purchase lifecycle tests, real-ac
 
 ## Development
 
-The iPhone/iPad SwiftUI project lives separately beside this repository in [ScrollXP iOS](../ScrollXP%20iOS/README.md). Open `../ScrollXP iOS/ScrollXP iOS.xcodeproj`. It includes the island, rewards, Screen Time extensions, widget, reminders, manual exports, optional email login, and private friend competitions shared with Android. Cloud island backup and StoreKit purchases remain unfinished. See the separate project’s `VALIDATION.md` for test results and physical-device requirements.
+The iPhone/iPad SwiftUI project lives separately beside this repository in [ScrollXP iOS](../ScrollXP%20iOS/README.md). Open `../ScrollXP iOS/ScrollXP iOS.xcodeproj`. It includes the island, rewards, Screen Time extensions, widget, reminders, manual exports, optional email login, and private friend competitions shared with Android. Cloud save/restore is shared with Android through the same verified account and version 1 format. StoreKit purchases remain unfinished. See the separate project’s `VALIDATION.md` for test results and physical-device requirements.
 
 Open this folder as a project in Android Studio and let Gradle sync finish. The project uses Kotlin, Compose, Room, and WorkManager. The minimum supported Android version is API 26.
 

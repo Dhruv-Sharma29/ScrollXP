@@ -1,5 +1,7 @@
 # ScrollXP — Product and Implementation Plan
 
+Next social iteration: [unique usernames, friend requests, Friends/Local ranking pages](FRIENDS_RANKING_PLAN.md), planned on 6 October 2026. Android usernames, friend requests, weekly friend/local rankings and opt-in nightly backup are now implemented; validation results are in release/VALIDATION.md. Existing invite-code circles remain available.
+
 Created: 4 October 2026  
 Platform: Android first  
 Status: Core game and release materials implemented; current emulator checks pass; broader release validation and publication pending; physical-device validation deferred  

@@ -36,3 +36,9 @@ Account creation/deletion is enabled in the configured Spark build. Before Play 
 - Finish physical-device validation when the user is ready and review the beta results.
 
 The [Google Play User Data policy](https://support.google.com/googleplay/android-developer/answer/10144311?hl=en) calls for an accessible in-app policy, public policy link, developer/contact information, data practices, and retention/deletion terms. This package prepares these materials; it does not claim Play approval or legal certification.
+
+## New Android social and nightly backup disclosure — 6 October 2026
+
+Review discoverable username and UID, relationship/request/block data, voluntarily published weekly count and optional self-selected area under the applicable user identifiers, other personal information/app-interaction categories. Local-board records are discoverable to verified users, not restricted to friends or physical residents; no GPS is accessed. Reports contain reporter/target UIDs, predefined reason and timestamp for private manual review. Own submitted reports are removed during account deletion; reports from others have manual abuse-review retention. A deletion-intent UID/timestamp exists during interrupted cleanup, followed by the existing indefinite deletion guard.
+
+Nightly backup is an explicit opt-in background upload of the same disclosed island/reward data, not Android's automatic system backup. Account/phone binding, conflict pause, approximate scheduling and disable-on-sign-out/reset/deletion are disclosed. Re-review the public pages and final Play form before publication; no change to Firebase billing or payment verification.
