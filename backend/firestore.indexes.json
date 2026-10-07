@@ -1,1 +1,33 @@
-{"indexes": [], "fieldOverrides": [{"collectionGroup": "backups", "fieldPath": "payload", "indexes": []}]}
+{
+  "indexes": [
+    {
+      "collectionGroup": "localScores",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "area",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "week",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "days",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "backups",
+      "fieldPath": "payload",
+      "indexes": []
+    }
+  ]
+}

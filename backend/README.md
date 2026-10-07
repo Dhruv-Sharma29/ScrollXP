@@ -1,6 +1,6 @@
 # ScrollXP on Firebase Spark
 
-The Android app uses Firebase Authentication and direct Cloud Firestore backups and private friend circles. Email signup/login, verification, recovery, manual save/restore, circles and account deletion require no Cloud Functions or Firebase billing account. Pro uses Google Play Billing on the device, independently of Firebase; see `../release/PLAY_BILLING_SETUP.md`. AI remains excluded. Weekly widget detail, 30-day local history, backups and circles are free.
+The Android and standalone iOS apps use Firebase Authentication and direct Cloud Firestore backups and private friend circles. Email signup/login, verification, recovery, manual save/restore, circles and account deletion require no Cloud Functions or Firebase billing account. Pro uses Google Play Billing on the device, independently of Firebase; see `../release/PLAY_BILLING_SETUP.md`. AI remains excluded. Weekly widget detail, 30-day local history, backups and circles are free.
 
 ## Setup without billing
 
@@ -37,6 +37,8 @@ Firestore access depends on these rules; they are now published to `scrollxp`. E
 
 Only an explicitly confirmed Back up now uploads the cosmetic profile, XP reward ledger, and reserved/opened chests to `users/{uid}/backups/latest`. The dated usage-XP ledger can imply capped selected-app activity; the policy discloses this. Selected app identifiers, raw events, per-app/daily usage totals, pause records, and reminder preferences are excluded. The UTF-8 payload is capped at 900 KB and schema/reward/chest validation occurs before restore.
 
+Android and iOS use the same version 1 JSON format, verified account, and latest-backup document; existing Android backups remain compatible. See [the shared contract](ISLAND_BACKUP_FORMAT.md) and `python3 scripts/test_shared_backup.py` from the Android root. Actual Android SDK/native Swift exchange passed in both directions against demo emulators on 6 October 2026. New iOS manual exports also use this format; older iOS imports remain supported.
+
 One account keeps one latest snapshot; one device keeps one local island even across account switches. Sign-in never saves or restores automatically. Restore replaces local game records transactionally, clears local usage/break history, keeps device app selection and setup state, and restarts coverage. Repeat restore does not add XP or reroll chests. It rechecks the signed-in UID before commit. A new device goes through app selection; no permissions or full-day coverage are imported.
 
 Firestore uses an in-memory cache and explicit server reads. Fresh verification tokens are requested after email verification so access rules can see the change. The rules allow only the verified owner's backup and reject cross-account reads/writes, unrelated collections, malformed fields, extra data, client timestamps, excessive payloads, and invalid XP bounds. The client cannot promise a confirmed save during a network failure.
@@ -68,3 +70,13 @@ Local demo Auth and Firestore emulators test signup, recovery/sign-in, verified-
 Real-project account flows, backup/restore on a second installation, public policy/deletion hosting, and physical-device validation remain necessary before publication. The separate local Firebase testing toolchain has known upstream dependency advisories; it is not included in the APK. Avoid `npm audit fix --force` dependency downgrades without reviewing and rerunning the tests.
 
 References: [Firebase pricing plans](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans), [Android account management](https://firebase.google.com/docs/auth/android/manage-users), [Firestore access conditions](https://firebase.google.com/docs/firestore/security/rules-conditions).
+
+## Usernames, Friends and weekly Ranking — 6 October 2026
+
+Android now adds a fixed unique verified-account handle, exact lookup, recipient-approved requests, accepted friends, removal, blocks and private profile reporting. `socialPairs` plus `socialLinks` enforce 20 total friends/requests/blocks per user using one-entry deltas and atomic coupling, keeping rule lookups bounded. Other users cannot read a user's index. Username ownership is coupled atomically to `socialProfiles`. Circles remain separate.
+
+Private `friendScores` are owner/accepted-friend reads, manually shared completed-day counts. `localScores` is a separate opt-in discoverable record with manually chosen supported Indian area, no GPS, and a current-week top-50 query. Public local entries are readable by any verified user, including people outside that area. Rules require current-week and limited collection queries; they do not prohibit exact public row reads. Both boards use Monday UTC weeks and self-reported 0–7 counts. A public local row is matched to the owner's private current score in the same transaction. No continuously running sync, server rankings, prizes or Functions.
+
+Account deletion uses `deletionIntents` to freeze new membership/publication while removing bounded relationships, profiles, handle reservations, scores, submitted reports and existing circles. The guard requires all owned social roots gone. Reports submitted by others are private developer-review records; see policy retention. Android and emulator coverage must be checked before deployment. Older clients without social cleanup cannot delete accounts that have new social records; use the updated Android deletion flow or developer support.
+
+Nightly island backup is optional, bound to one account on one phone and scheduled around 1 a.m. by WorkManager. It uses the unchanged latest-backup format and a transaction comparing its last confirmed server timestamp. A different cloud save pauses it. Manual save/restore, sign-out, reset and deletion disable it. Android network/battery/background restrictions may delay or skip a night; local game saving continues normally. This does not require a separate collection or Blaze.

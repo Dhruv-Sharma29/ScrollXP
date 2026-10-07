@@ -16,7 +16,8 @@ service cloud.firestore {
       return verified() && !exists(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
     }
     function friendReady() {
-      return alive() && !existsAfter(/databases/$(database)/documents/accountDeletions/$(request.auth.uid));
+      return alive() && !existsAfter(/databases/$(database)/documents/accountDeletions/$(request.auth.uid))
+        && !existsAfter(/databases/$(database)/documents/deletionIntents/$(request.auth.uid));
     }
     function codeValid(code) { return code.matches('^[A-F0-9]{20}$'); }
     function indexedAfter(code) {
@@ -39,6 +40,138 @@ service cloud.firestore {
       return data.keys().hasOnly(['circleIds']) && data.circleIds is list
         && data.circleIds.size() <= 3 && data.circleIds.toSet().size() == data.circleIds.size()
         && linkedEntry(data, 0) && linkedEntry(data, 1) && linkedEntry(data, 2);
+    }
+    function pairKey(a, b) { return a < b ? a + '~' + b : b + '~' + a; }
+    function socialAlive(uid) {
+      return !existsAfter(/databases/$(database)/documents/accountDeletions/$(uid))
+        && !existsAfter(/databases/$(database)/documents/deletionIntents/$(uid));
+    }
+    function connected(uid) {
+      let key = pairKey(request.auth.uid, uid);
+      return exists(/databases/$(database)/documents/socialPairs/$(key));
+    }
+    function accepted(uid) {
+      let key = pairKey(request.auth.uid, uid);
+      return exists(/databases/$(database)/documents/socialPairs/$(key))
+        && get(/databases/$(database)/documents/socialPairs/$(key)).data.status == 'accepted';
+    }
+    function named(uid, data) {
+      return getAfter(/databases/$(database)/documents/socialProfiles/$(uid)).data.username == data.username;
+    }
+    function handleValid(name) {
+      return name.matches('^[a-z][a-z0-9_]{2,19}$') && !(name in ['admin','support','scrollxp','official','moderator']);
+    }
+    match /usernames/{name} {
+      allow get: if alive();
+      allow create: if friendReady() && handleValid(name)
+        && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/socialProfiles/$(request.auth.uid)).data.username == name;
+      allow delete: if owner(resource.data.uid) && !existsAfter(/databases/$(database)/documents/socialProfiles/$(request.auth.uid));
+    }
+    match /socialProfiles/{uid} {
+      allow get: if owner(uid) || (alive() && connected(uid));
+      allow create: if owner(uid) && friendReady()
+        && request.resource.data.keys().hasOnly(['username','createdAt'])
+        && handleValid(request.resource.data.username) && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
+      allow delete: if owner(uid) && (!exists(/databases/$(database)/documents/socialProfiles/$(uid)) ||
+        (!existsAfter(/databases/$(database)/documents/usernames/$(resource.data.username))
+        && !existsAfter(/databases/$(database)/documents/socialLinks/$(uid))
+        && !existsAfter(/databases/$(database)/documents/friendScores/$(uid))
+        && !existsAfter(/databases/$(database)/documents/localScores/$(uid))));
+    }
+    function pairIndexed(uid, key) {
+      return key in getAfter(/databases/$(database)/documents/socialLinks/$(uid)).data.pairs;
+    }
+    function pairReleased(uid, key) {
+      return !(key in getAfter(/databases/$(database)/documents/socialLinks/$(uid)).data.pairs);
+    }
+    match /socialLinks/{uid} {
+      function shape(d) {
+        return d.keys().hasOnly(['pairs','lastPair']) && d.pairs is list && d.pairs.size() <= 20
+          && d.pairs.toSet().size() == d.pairs.size() && d.lastPair is string;
+      }
+      function addition(before, after) {
+        let key = after.lastPair;
+        let p = getAfter(/databases/$(database)/documents/socialPairs/$(key)).data;
+        return friendReady() && socialAlive(uid) && uid in p.members && request.auth.uid == p.sender
+          && p.status == 'pending' && p.createdAt == request.time
+          && after.pairs.toSet() == before.toSet().union([key].toSet()) && !(key in before);
+      }
+      function removal(before, after) {
+        let key = after.lastPair;
+        let p = get(/databases/$(database)/documents/socialPairs/$(key)).data;
+        return request.auth != null && request.auth.uid in p.members && uid in p.members
+          && !existsAfter(/databases/$(database)/documents/socialPairs/$(key))
+          && key in before && after.pairs.toSet() == before.toSet().difference([key].toSet());
+      }
+      allow get: if owner(uid);
+      allow create: if shape(request.resource.data) && addition([], request.resource.data);
+      allow update: if shape(request.resource.data)
+        && (addition(resource.data.pairs, request.resource.data) || removal(resource.data.pairs, request.resource.data));
+      allow delete: if owner(uid) && (!exists(/databases/$(database)/documents/socialLinks/$(uid)) || resource.data.pairs.size() == 0);
+    }
+    match /socialPairs/{key} {
+      function participant() { return request.auth != null && request.auth.uid in resource.data.members; }
+      allow get: if participant() || (alive() && !exists(/databases/$(database)/documents/socialPairs/$(key)));
+      allow create: if friendReady()
+        && request.resource.data.keys().hasOnly(['members','sender','status','blocker','createdAt'])
+        && request.resource.data.members is list && request.resource.data.members.size() == 2
+        && request.resource.data.members[0] is string && request.resource.data.members[1] is string
+        && request.resource.data.members[0] < request.resource.data.members[1]
+        && key == pairKey(request.resource.data.members[0], request.resource.data.members[1])
+        && request.auth.uid in request.resource.data.members && request.resource.data.sender == request.auth.uid
+        && request.resource.data.status == 'pending' && request.resource.data.blocker == ''
+        && request.resource.data.createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/socialProfiles/$(request.resource.data.members[0]))
+        && existsAfter(/databases/$(database)/documents/socialProfiles/$(request.resource.data.members[1]))
+        && socialAlive(request.resource.data.members[0]) && socialAlive(request.resource.data.members[1])
+        && pairIndexed(request.resource.data.members[0], key) && pairIndexed(request.resource.data.members[1], key);
+      allow update: if participant() && friendReady() && socialAlive(resource.data.members[0]) && socialAlive(resource.data.members[1])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','blocker'])
+        && ((resource.data.status == 'pending' && request.auth.uid != resource.data.sender
+          && request.resource.data.status == 'accepted' && request.resource.data.blocker == '')
+        || (resource.data.status != 'blocked' && request.resource.data.status == 'blocked' && request.resource.data.blocker == request.auth.uid));
+      allow delete: if participant()
+        && (resource.data.status != 'blocked' || resource.data.blocker == request.auth.uid || exists(/databases/$(database)/documents/deletionIntents/$(request.auth.uid)))
+        && pairReleased(resource.data.members[0], key) && pairReleased(resource.data.members[1], key);
+    }
+    function scoreShape(uid, d, local) {
+      return d.keys().hasOnly(local ? ['username','week','days','startedAt','updatedAt','area'] : ['username','week','days','startedAt','updatedAt'])
+        && named(uid, d) && d.days is int && d.days >= 0 && d.days <= 7
+        && d.week == int((request.time.toMillis() - 345600000) / 604800000)
+        && d.startedAt is timestamp && d.startedAt <= request.time && d.updatedAt == request.time;
+    }
+    match /friendScores/{uid} {
+      allow get: if owner(uid) || (alive() && accepted(uid));
+      allow create: if owner(uid) && friendReady() && scoreShape(uid, request.resource.data, false)
+        && request.resource.data.days == 0 && request.resource.data.startedAt == request.time;
+      allow update: if owner(uid) && friendReady() && scoreShape(uid, request.resource.data, false)
+        && request.resource.data.startedAt == resource.data.startedAt
+        && (request.resource.data.week != resource.data.week || request.resource.data.days >= resource.data.days);
+      allow delete: if owner(uid);
+    }
+    match /localScores/{uid} {
+      allow get: if owner(uid) || alive();
+      allow list: if alive() && request.query.limit != null && request.query.limit <= 50
+        && resource.data.week == int((request.time.toMillis() - 345600000) / 604800000);
+      allow create, update: if owner(uid) && friendReady() && scoreShape(uid, request.resource.data, true)
+        && request.resource.data.area in ['Dehradun','Delhi','Mumbai','Bengaluru','Hyderabad','Chennai','Kolkata','Pune']
+        && request.resource.data.days == getAfter(/databases/$(database)/documents/friendScores/$(uid)).data.days
+        && request.resource.data.week == getAfter(/databases/$(database)/documents/friendScores/$(uid)).data.week
+        && request.resource.data.startedAt == getAfter(/databases/$(database)/documents/friendScores/$(uid)).data.startedAt;
+      allow delete: if owner(uid);
+    }
+    match /socialReports/{id} {
+      allow get: if (alive() && !exists(/databases/$(database)/documents/socialReports/$(id))) || owner(resource.data.reporter);
+      allow list: if request.auth != null && resource.data.reporter == request.auth.uid
+        && request.query.limit != null && request.query.limit <= 20;
+      allow create: if friendReady() && request.resource.data.keys().hasOnly(['reporter','target','reason','createdAt'])
+        && request.resource.data.reporter == request.auth.uid && request.resource.data.target is string
+        && request.resource.data.target != request.auth.uid && connected(request.resource.data.target)
+        && id == pairKey(request.auth.uid, request.resource.data.target)
+        && request.resource.data.reason == 'inappropriate_profile' && request.resource.data.createdAt == request.time;
+      allow delete: if owner(resource.data.reporter);
     }
     match /friendLinks/{uid} {
       allow get: if owner(uid);
@@ -107,12 +240,19 @@ service cloud.firestore {
       allow delete: if owner(uid);
       allow create, update: if owner(uid) && verified()
         && !existsAfter(/databases/$(database)/documents/accountDeletions/$(uid))
+        && !existsAfter(/databases/$(database)/documents/deletionIntents/$(uid))
         && request.resource.data.keys().hasOnly(['version', 'payload', 'name', 'xp', 'updatedAt'])
         && request.resource.data.version == 1
         && request.resource.data.payload is string && request.resource.data.payload.size() <= 900000
         && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 28
         && request.resource.data.xp is int && request.resource.data.xp >= 0 && request.resource.data.xp <= 100000000
         && request.resource.data.updatedAt == request.time;
+    }
+    match /deletionIntents/{uid} {
+      allow get: if owner(uid);
+      allow create: if owner(uid) && freshSignIn() && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.createdAt == request.time;
+      allow delete: if owner(uid) && existsAfter(/databases/$(database)/documents/accountDeletions/$(uid));
     }
     match /accountDeletions/{uid} {
       allow read: if owner(uid);
@@ -121,7 +261,11 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['deletedAt'])
         && request.resource.data.deletedAt == request.time
         && !existsAfter(/databases/$(database)/documents/users/$(uid)/backups/latest)
-        && !existsAfter(/databases/$(database)/documents/friendLinks/$(uid));
+        && !existsAfter(/databases/$(database)/documents/friendLinks/$(uid))
+        && !existsAfter(/databases/$(database)/documents/socialProfiles/$(uid))
+        && !existsAfter(/databases/$(database)/documents/socialLinks/$(uid))
+        && !existsAfter(/databases/$(database)/documents/friendScores/$(uid))
+        && !existsAfter(/databases/$(database)/documents/localScores/$(uid));
       allow update, delete: if false;
     }
     // Purchases never establish a client-writable cloud entitlement.
