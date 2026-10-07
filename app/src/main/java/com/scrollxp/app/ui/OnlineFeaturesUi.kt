@@ -102,7 +102,13 @@ internal fun OnlineFeatures(state: ScrollState, refreshLocal: () -> Unit) {
     }
     FeaturePanel("Cloud island backup") {
         Text("Save or restore the same island on Android and iPhone, including XP, reward dates, and chest contents. App selections, daily usage totals, and reminder settings stay on the phone.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
-        Text("Backups are manual. Each account keeps one latest backup; saving replaces it. Restoring replaces this device's game and clears local usage history.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
+        Text("Your island is saved locally as you play. Cloud backups can be manual or optional nightly saves. Each account keeps one latest backup; saving replaces it. Restoring replaces this device's game and clears local usage history.",fontSize = 13.sp,color = Muted,lineHeight = 21.sp)
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Text("Nightly island backup", fontWeight = FontWeight.Bold); Text("Around 1 a.m. on this phone; requires internet and sufficient battery. Android may delay it.", fontSize = 12.sp, color = Muted) }
+            Switch(checked = online.nightly.uid != null && online.nightly.uid == online.uid,
+                onCheckedChange = { if (it) action = "nightly" else model?.nightly(false) }, enabled = ready && state.profile.onboarded)
+        }
+        Text(online.nightly.status, fontSize = 12.sp, color = Muted)
         online.backupTime?.let { Text("${online.backupName.orEmpty()} · ${online.backupXp ?: 0} XP\nSaved ${DateFormat.getDateTimeInstance(DateFormat.MEDIUM,DateFormat.SHORT).format(Date(it))}",fontSize = 13.sp) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { action = "backup" },enabled = ready && state.profile.onboarded) { Text("Back up now") }
@@ -144,9 +150,10 @@ internal fun OnlineFeatures(state: ScrollState, refreshLocal: () -> Unit) {
     }
     if (showLogin) AlertDialog(onDismissRequest = { showLogin = false },title = { Text("Your account") },
         text = { AccountForm(online,model,finished = { showLogin = false }) },confirmButton = { TextButton(onClick = { showLogin = false }) { Text("Close") } })
-    if (action != null) AlertDialog(onDismissRequest = { action = null; password = "" },title = { Text(when(action) { "restore" -> "Replace this island?"; "backup" -> "Replace cloud backup?"; "account" -> "Delete online account?"; else -> "Delete cloud backup?" }) },
+    if (action != null) AlertDialog(onDismissRequest = { action = null; password = "" },title = { Text(when(action) { "restore" -> "Replace this island?"; "backup" -> "Replace cloud backup?"; "nightly" -> "Enable nightly cloud backup?"; "account" -> "Delete online account?"; else -> "Delete cloud backup?" }) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(when(action) {
+                "nightly" -> "Automatically save this phone’s island to ${online.email} around 1 a.m. This replaces the latest cloud backup. If another device or a manual save changes it, nightly backup pauses until you review and enable it again. Turning it off keeps existing backups. No daily usage totals or app names are uploaded."
                 "backup" -> "Save this device's island to ${online.email}. Any existing backup on that account will be replaced. No daily usage totals or selected-app names are uploaded."
                 "restore" -> "Restore the latest backup from ${online.email}. This replaces local XP, rewards, and preferences and clears usage history. It cannot be undone. App selections stay on this phone; new full-day goals need tracking coverage again."
                 "account" -> "Remove your shared friend names and scores, cloud backup and Firebase login. Your local island stays here. A minimal deletion guard remains to block old sessions. If interrupted, repeat to finish. Google Play subscriptions must be cancelled separately in Play. Enter your current password to confirm."
@@ -155,7 +162,7 @@ internal fun OnlineFeatures(state: ScrollState, refreshLocal: () -> Unit) {
             if (action == "account") OutlinedTextField(password,{ password = it },label = { Text("Current password") },singleLine = true,visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password))
         } },confirmButton = { TextButton(enabled = !online.busy && (action != "account" || password.isNotBlank()),onClick = {
-            when(action) { "backup" -> model?.backup(); "restore" -> model?.restore(); "account" -> model?.deleteAccount(password); else -> model?.deleteBackup() }
+            when(action) { "nightly" -> model?.nightly(true); "backup" -> model?.backup(); "restore" -> model?.restore(); "account" -> model?.deleteAccount(password); else -> model?.deleteBackup() }
             action = null; password = ""
         }) { Text("Confirm") } },dismissButton = { TextButton(onClick = { action = null; password = "" }) { Text("Cancel") } })
     history?.let { days -> AlertDialog(onDismissRequest = { history = null },title = { Text("Last $historyWindow calendar days") },text = {
@@ -177,7 +184,7 @@ internal fun AccountForm(online: OnlineState, model: OnlineViewModel?, finished:
     var create by remember { mutableStateOf(false) }
     LaunchedEffect(online.uid) { if (online.uid != null) { password = ""; finished() } }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("An account is optional. Island backups upload only when you choose Back up now; friend scores have a separate sharing action. No subscription is needed for either.",color = Muted,fontSize = 13.sp,lineHeight = 20.sp)
+        Text("An account is optional. Island backups upload when you choose Back up now or enable nightly backup; friend scores have a separate sharing action. No subscription is needed for either.",color = Muted,fontSize = 13.sp,lineHeight = 20.sp)
         OutlinedTextField(email,{ email = it.take(254) },label = { Text("Email address") },singleLine = true,enabled = !online.busy,
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),modifier = Modifier.fillMaxWidth())
         OutlinedTextField(password,{ password = it },label = { Text("Password") },singleLine = true,enabled = !online.busy,

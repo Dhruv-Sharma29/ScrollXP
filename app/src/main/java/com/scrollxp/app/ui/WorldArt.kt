@@ -30,6 +30,12 @@ fun WorldGlyph(id: String, modifier: Modifier = Modifier, color: Color = Green) 
                 if (fill) drawPath(path, tint) else drawPath(path, tint, style = stroke)
             }
             when (id) {
+                "Friends" -> {
+                    drawCircle(color, 6f, Offset(17f, 15f), style = stroke)
+                    drawCircle(color, 5f, Offset(33f, 18f), style = stroke)
+                    drawArc(color, 180f, 180f, false, Offset(5f, 24f), Size(25f, 25f), style = stroke)
+                    drawArc(color, 190f, 165f, false, Offset(26f, 27f), Size(18f, 20f), style = stroke)
+                }
                 "mushrooms", "bench", "mailbox", "flowers", "lantern", "stones", "picnic", "windmill", "beehive", "fountain", "telescope", "crystal", "airship" -> drawTreasure(id, 24f, 40f, 1f, dusk)
                 "chest" -> {
                     drawRoundRect(warm.copy(alpha = .25f), Offset(6f, 17f), Size(36f, 25f), CornerRadius(5f))

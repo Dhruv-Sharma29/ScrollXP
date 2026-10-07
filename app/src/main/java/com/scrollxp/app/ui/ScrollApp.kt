@@ -85,7 +85,7 @@ On the next screen, choose ScrollXP and allow Usage Access. You can revoke it an
         }
     }, bottomBar = {
         NavigationBar(containerColor = Card, tonalElevation = 0.dp) {
-            listOf("Home", "World", "Goals", "Stats").forEach { name ->
+            listOf("Home", "World", "Goals", "Stats", "Friends").forEach { name ->
                 NavigationBarItem(selected = tab == name, onClick = { tab = name },
                     icon = { WorldGlyph(name, color = if (tab == name) Ink else Muted) },
                     label = { Text(name, fontSize = 11.sp) },
@@ -104,6 +104,8 @@ On the next screen, choose ScrollXP and allow Usage Access. You can revoke it an
                     "World" -> WorldPage(state, model) { chestKey = it }
                     "Goals" -> GoalsPage(state, { tab = "Settings" })
                     "Stats" -> StatsPage(state)
+                    "Friends" -> FriendsPage { tab = "Ranking" }
+                    "Ranking" -> RankingPage()
                     "Settings" -> SettingsPage(state, model, accessAction)
                 }
               } }
@@ -531,9 +533,9 @@ private fun SettingsPage(state: ScrollState, model: ScrollViewModel, access: () 
 @Composable
 private fun SetupForm(state: ScrollState, button: String, save: (String, Set<String>, Int) -> Unit) {
     val profile = state.profile
-    var name by rememberSaveable(profile.pendingAt) { mutableStateOf(profile.islandName) }
-    var selection by rememberSaveable(profile.pendingAt) { mutableStateOf(profile.pendingApps ?: profile.selectedApps) }
-    var budget by rememberSaveable(profile.pendingAt) { mutableIntStateOf(profile.pendingBudget ?: profile.budgetMinutes) }
+    var name by rememberSaveable(profile.pendingAt, profile.islandName) { mutableStateOf(profile.islandName) }
+    var selection by rememberSaveable(profile.pendingAt, profile.pendingApps, profile.selectedApps) { mutableStateOf(profile.pendingApps ?: profile.selectedApps) }
+    var budget by rememberSaveable(profile.pendingAt, profile.pendingBudget, profile.budgetMinutes) { mutableIntStateOf(profile.pendingBudget ?: profile.budgetMinutes) }
     var search by rememberSaveable { mutableStateOf("") }
     val selected = selection.packages()
     OutlinedTextField(value = name, onValueChange = { name = it.take(28) }, label = { Text("Island name") }, singleLine = true,

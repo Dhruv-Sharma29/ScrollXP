@@ -102,6 +102,7 @@ class ScrollViewModel(application: Application) : AndroidViewModel(application) 
     fun reminders(value: ReminderSettings) = change { ReminderScheduler.update(getApplication(), value) }
     fun reset() = change {
         ReminderScheduler.reset(getApplication())
+        com.scrollxp.app.worker.NightlyScheduler.disable(getApplication())
         repository.reset()
         getApplication<Application>().getSharedPreferences("pro_preferences", android.content.Context.MODE_PRIVATE).edit().clear().apply()
         com.scrollxp.app.sharing.IslandExport.clear(getApplication())
