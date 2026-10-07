@@ -18,6 +18,8 @@ import kotlinx.coroutines.tasks.await
 data class OnlineState(val configured: Boolean = false, val uid: String? = null, val email: String? = null,
     val verified: Boolean = false, val busy: Boolean = false, val message: String? = null,
     val backupTime: Long? = null, val backupXp: Int? = null, val backupName: String? = null,
+    val nightly: com.scrollxp.app.worker.NightlySettings = com.scrollxp.app.worker.NightlySettings(),
+    val social: SocialSnapshot = SocialSnapshot(), val found: SocialProfile? = null, val localRows: List<RankingRow> = emptyList(), val loadedArea: String? = null,
     val deleting: Boolean = false, val circles: List<FriendCircle> = emptyList())
 
 /** Optional Firebase Spark accounts. Signing in never uploads or changes the local game. */
@@ -25,15 +27,10 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = ScrollRepository(app)
     private val configured = BuildConfig.FIREBASE_CONFIGURED && BuildConfig.ONLINE_ENABLED && FirebaseApp.getApps(app).isNotEmpty()
     private val auth = if (configured) FirebaseAuth.getInstance() else null
-    private val firestore = if (configured) FirebaseFirestore.getInstance().apply {
-        // The shared SDK instance may already be started when an Activity is recreated.
-        val settings = firestoreSettings
-        if (settings.cacheSettings !is MemoryCacheSettings) {
-            firestoreSettings = FirebaseFirestoreSettings.Builder(settings).setLocalCacheSettings(MemoryCacheSettings.newBuilder().build()).build()
-        }
-    } else null
+    private val firestore = if (configured) FirebaseStores.database() else null
     private val cloud = firestore?.let(::CloudAccountStore)
     private val friends = firestore?.let(::FriendCircleStore)
+    private val social = firestore?.let(::SocialStore)
     private val mutable = MutableStateFlow(OnlineState(configured = configured))
     val state: StateFlow<OnlineState> = mutable.asStateFlow()
     private val listener = FirebaseAuth.AuthStateListener { changed ->
@@ -43,7 +40,7 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
         else mutable.value = OnlineState(configured = configured,uid = current?.uid,email = current?.email,
             verified = current?.isEmailVerified == true,busy = previous.busy)
     }
-    init { auth?.addAuthStateListener(listener) }
+    init { auth?.addAuthStateListener(listener); com.scrollxp.app.worker.NightlyScheduler.enqueue(app) }
     override fun onCleared() { auth?.removeAuthStateListener(listener); super.onCleared() }
 
     private fun perform(block: suspend () -> String) {
@@ -88,10 +85,11 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
         // Reload updates the user object; a fresh token lets rules see email_verified.
         existing.getIdToken(true).await(); same(uid)
         val deleting = requireNotNull(cloud).deletionStarted(uid); same(uid)
+        mutable.update { it.copy(nightly = com.scrollxp.app.worker.NightlyStore(getApplication()).settings()) }
         mutable.update { it.copy(verified = existing.isEmailVerified,deleting = deleting) }
         if (deleting) {
             mutable.update { it.copy(backupTime = null,backupXp = null,backupName = null) }
-            return@perform "Your backup is removed and account deletion is pending. Choose Delete online account to finish."
+            return@perform "Account cleanup is pending. Choose Delete online account to finish."
         }
         if (!existing.isEmailVerified) return@perform "Verify your email before using cloud backups."
         val backup = cloud.latest(uid); same(uid)
@@ -102,6 +100,7 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun backup() = perform {
         val uid = user().uid
+        disableNightly("Paused after a manual save. Review the backup before enabling nightly saves again.")
         val snapshot = repository.backup(); same(uid)
         requireNotNull(cloud).save(uid,snapshot); same(uid)
         mutable.update { it.copy(backupTime = System.currentTimeMillis(),backupXp = snapshot.xp,backupName = snapshot.profile.islandName) }
@@ -109,6 +108,7 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun restore() = perform {
         val uid = user().uid
+        disableNightly("Paused for restore. Enable nightly saves again after reviewing your restored island.")
         val doc = requireNotNull(cloud).latest(uid); same(uid)
         val backup = requireNotNull(cloud.decode(doc)) { "No cloud backup exists for this account." }
         repository.restore(backup) { auth?.currentUser?.uid == uid }
@@ -116,11 +116,57 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
         "Island restored. Local usage history was cleared; device app selection was kept."
     }
     fun deleteBackup() = perform {
-        val uid = user().uid; requireNotNull(cloud).removeBackup(uid); same(uid)
+        val uid = user().uid; disableNightly(); requireNotNull(cloud).removeBackup(uid); same(uid)
         mutable.update { it.copy(backupTime = null,backupXp = null,backupName = null) }
         "Cloud backup deleted. Your local island is unchanged."
     }
-    fun signOut() { if (!mutable.value.busy) auth?.signOut() }
+    private suspend fun disableNightly(status: String = "Nightly cloud backup is off.") {
+        com.scrollxp.app.worker.NightlyScheduler.disable(getApplication(), status)
+        mutable.update { it.copy(nightly = com.scrollxp.app.worker.NightlyStore(getApplication()).settings()) }
+    }
+    fun signOut() = perform {
+        disableNightly(); auth?.signOut(); "Signed out. Nightly backup is off."
+    }
+    fun nightly(enabled: Boolean) = perform {
+        if (enabled) {
+            val uid = user().uid; val latest = requireNotNull(cloud).latest(uid); same(uid); cloud.decode(latest)
+            com.scrollxp.app.worker.NightlyScheduler.enable(getApplication(), uid, latest.getTimestamp("updatedAt"))
+        } else disableNightly()
+        mutable.update { it.copy(nightly = com.scrollxp.app.worker.NightlyStore(getApplication()).settings()) }
+        if (enabled) "Nightly backup enabled for this account on this phone." else "Nightly backup disabled."
+    }
+    private suspend fun loadSocial(uid: String) {
+        mutable.update { it.copy(social = SocialSnapshot(profile = it.social.profile), localRows = emptyList(), loadedArea = null) }
+        val result = requireNotNull(social).load(uid); same(uid); mutable.update { it.copy(social = result, localRows = emptyList(), loadedArea = null) }
+    }
+    fun refreshSocial() = perform { val uid = user().uid; loadSocial(uid); "Friends and rankings refreshed." }
+    fun claimUsername(name: String) = perform {
+        val uid = user().uid; requireNotNull(social).claim(uid, name); same(uid); loadSocial(uid); "Username saved."
+    }
+    fun searchUsername(name: String) = perform {
+        val uid = user().uid; mutable.update { it.copy(found = null) }; val result = requireNotNull(social).find(name)
+        same(uid); mutable.update { it.copy(found = result) }; if (result == null) "Username not found." else "Username found."
+    }
+    fun addFriend(person: SocialProfile) = perform {
+        val uid = user().uid; requireNotNull(social).request(uid, person); same(uid); loadSocial(uid); "Friend request sent."
+    }
+    fun friendAction(id: String, action: String) = perform {
+        val uid = user().uid; requireNotNull(social).act(uid, id, action); same(uid); loadSocial(uid); "Friends updated."
+    }
+    fun reportFriend(target: String) = perform { val uid = user().uid; requireNotNull(social).report(uid, target); "Report submitted for developer review." }
+    fun shareRanking(area: String? = null) = perform {
+        val uid = user().uid
+        val days = repository.dao.extendedHistory().map { BalanceDay(it.start, it.end, it.goalStatus == "SUCCESS" && !it.partial && it.eligibleSince <= it.start) }
+        requireNotNull(social).publish(uid, days, area ?: mutable.value.social.area); same(uid); loadSocial(uid)
+        "Weekly score shared. Only complete days after sharing began count."
+    }
+    fun withdrawRanking(localOnly: Boolean) = perform {
+        val uid = user().uid; requireNotNull(social).withdraw(uid, localOnly); same(uid); loadSocial(uid); "Score sharing removed."
+    }
+    fun clearLocalRanking() { mutable.update { it.copy(localRows = emptyList(), loadedArea = null) } }
+    fun localRanking(area: String) = perform {
+        val uid = user().uid; clearLocalRanking(); val rows = requireNotNull(social).local(area); same(uid); mutable.update { it.copy(localRows = rows, loadedArea = area) }; "Local board refreshed."
+    }
     private suspend fun refreshFriends(uid: String) {
         val circles = requireNotNull(friends).list(uid); same(uid)
         mutable.update { it.copy(circles = circles) }
@@ -152,6 +198,9 @@ class OnlineViewModel(app: Application) : AndroidViewModel(app) {
         val uid = current.uid
         current.reauthenticate(EmailAuthProvider.getCredential(requireNotNull(current.email),password)).await()
         current.getIdToken(true).await(); same(uid)
+        disableNightly()
+        requireNotNull(cloud).intent(uid); same(uid)
+        requireNotNull(social).cleanup(uid); same(uid)
         // Remove every shared nickname/score before placing the permanent deletion guard.
         requireNotNull(friends).leaveAll(uid); same(uid)
         mutable.update { it.copy(circles = emptyList()) }
