@@ -40,3 +40,9 @@ firestore-debug.log
 # iOS workspace (excluded from commit)
 /ios/
 
+
+# Kotlin compiler session cache
+.kotlin/
+
+# Python test-runner bytecode
+__pycache__/

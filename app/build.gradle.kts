@@ -62,6 +62,7 @@ android {
         buildConfig = true
     }
     sourceSets.getByName("androidTest").assets.srcDir("schemas")
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("backend/fixtures/cross-platform"))
     sourceSets.getByName("main").assets.srcDir(rootProject.file("release/policy"))
 }
 
