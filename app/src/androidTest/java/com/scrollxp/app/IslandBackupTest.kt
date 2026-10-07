@@ -38,12 +38,12 @@ class IslandBackupTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val db = Room.inMemoryDatabaseBuilder(context,ScrollDatabase::class.java).build()
         try {
-            val dao = db.dao(); dao.saveProfile(Profile(onboarded = true,zone = "UTC",selectedApps = "local.app",trackingSince = 10,lastObserved = 30))
+            val dao = db.dao(); dao.saveProfile(Profile(onboarded = true,zone = "UTC",selectedApps = "local.app",paused = true,trackingSince = 10,lastObserved = 30))
             dao.saveDay(DayRecord("2026-10-01",10,30,"local.app",45,10,perAppJson = "{private:1}"))
             repeat(2) { IslandBackupStore(db).restore(IslandBackup.decode(fixture().encode())) { true } }
             assertEquals(120,dao.totalXp()); assertEquals(2,dao.chests().size)
             assertEquals(20L,dao.chest("milestone:0")?.openedAt); assertNull(dao.chest("milestone:100")?.openedAt)
-            assertEquals("local.app",dao.profile()?.selectedApps); assertEquals(0L,dao.profile()?.trackingSince)
+            assertEquals(true,dao.profile()?.paused); assertEquals("local.app",dao.profile()?.selectedApps); assertEquals(0L,dao.profile()?.trackingSince)
             assertEquals(0L,dao.profile()?.lastObserved); assertNull(dao.day("2026-10-01"))
             assertEquals(listOf("2026-10-01"),dao.goalDates())
         } finally { db.close() }
@@ -53,4 +53,28 @@ class IslandBackupTest {
         try { fixture().copy(rewards = listOf(Reward("usage:2026-10-01","2026-10-01","USAGE",122))).encode(); fail() } catch (_: IllegalArgumentException) { }
         try { fixture().copy(chests = fixture().chests + fixture().chests.first().copy(key = "milestone:300")).encode(); fail() } catch (_: IllegalArgumentException) { }
     }
+    @Test fun sharedFixturePreservesDatesFlagsAndUnopenedChest() {
+        val json = InstrumentationRegistry.getInstrumentation().context.assets.open("island-v1.json").bufferedReader().use { it.readText() }
+        val backup = IslandBackup.decode(json)
+        val copy = IslandBackup.decode(backup.encode())
+        assertEquals(backup, copy); assertEquals(120, copy.xp)
+        assertEquals(1790812860456L, copy.chests[0].openedAt)
+        assertNull(copy.chests[1].openedAt)
+        assertTrue(copy.profile.hasPlacedTreasure); assertTrue(copy.profile.reducedMotion)
+        assertEquals("bench|lantern|trees", copy.profile.hiddenItems)
+    }
+    @Test fun jsonTypeCoercionAndTimestampOverflowAreRejected() {
+        val valid = org.json.JSONObject(fixture().encode())
+        for (value in listOf("1", 1.5, true)) {
+            valid.put("version", value)
+            assertThrows(Exception::class.java) { IslandBackup.decode(valid.toString()) }
+        }
+        valid.put("version", 1)
+        valid.getJSONObject("profile").put("haptics", "true")
+        assertThrows(Exception::class.java) { IslandBackup.decode(valid.toString()) }
+        assertThrows(IllegalArgumentException::class.java) {
+            fixture().copy(chests = listOf(fixture().chests.first().copy(earnedAt = Long.MAX_VALUE))).encode()
+        }
+    }
+
 }

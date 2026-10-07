@@ -41,6 +41,7 @@ class ConnectedFeaturesTest {
         compose.onNodeWithText("Join with code").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Subscribe with Google Play").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("View 30-day history").performScrollTo().assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { runCatching { compose.onNodeWithText("Last 30 calendar days").assertIsDisplayed(); true }.getOrDefault(false) }
         compose.onNodeWithText("Last 30 calendar days").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
         compose.onNodeWithText("Weekly balance detail").performScrollTo().assertIsDisplayed()
